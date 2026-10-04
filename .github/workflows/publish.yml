@@ -1,0 +1,99 @@
+# Publishes to npm WITH a sigstore provenance attestation, then to the Official
+# MCP Registry, from ONE run.
+#
+# Provenance can only be generated from a supported CI with OIDC -- a local
+# `npm publish --provenance` fails. This is the only path that puts
+# `dist.attestations` on the published artifact.
+#
+# Both registries publish from one job on purpose. They were two separate manual
+# acts for stillos-notary-mcp and the Registry silently fell FOUR releases
+# behind, serving 1.2.0 install metadata with status "active" and isLatest true
+# and nothing anywhere saying it was stale. That is the defect this file exists
+# to make impossible here.
+# See [[npm-registry-dual-publish-blank-secret-and-two-traps-2026-09-22]].
+name: publish
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write        # required for provenance AND for mcp-publisher github-oidc
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          registry-url: https://registry.npmjs.org
+
+      # The gate is the OFFLINE subset deliberately. The live tests prove the
+      # public ratings endpoint is up, which is not a property of this package --
+      # gating a publish on our own uptime would block a release for a reason
+      # that has nothing to do with the artifact being released.
+      - name: Known-answer tests (offline subset)
+        run: node test.cjs --offline
+
+      - name: Sanity — package loads and declares its tools
+        run: node -e "const m=require('./index.cjs'); if(m.TOOLS.length!==3) throw new Error('tool count changed'); console.log('index.cjs OK, '+m.TOOLS.length+' tools')"
+
+      - name: Publish with provenance
+        # Idempotent on purpose: a hard failure on an already-published npm
+        # version would abort the job before the MCP Registry step ever ran.
+        run: |
+          V=$(node -p "require('./package.json').version")
+          if curl -sf "https://registry.npmjs.org/stillos-ratings-mcp/$V" > /dev/null; then
+            echo "npm already has $V — skipping publish, continuing to the Registry"
+          else
+            npm publish --provenance --access public
+          fi
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+      # ---- Official MCP Registry ------------------------------------------
+      # github-oidc needs no human and no stored credential: the Registry trusts
+      # this repo's OIDC identity for the io.github.stillmarcus24/* namespace,
+      # which is exactly why the interactive device flow is the wrong tool here.
+      - name: Wait for npm to serve the new version
+        # The Registry validates that the npm version really exists. npm's
+        # packument is CDN-cached and lagged ~1 min on a prior publish, so going
+        # straight through races that cache and fails on a version that is
+        # genuinely there. Poll the EXACT version endpoint, never `latest`.
+        run: |
+          V=$(node -p "require('./package.json').version")
+          for i in $(seq 1 30); do
+            if curl -sf "https://registry.npmjs.org/stillos-ratings-mcp/$V" > /dev/null; then
+              echo "npm serving $V after ${i} attempt(s)"; exit 0
+            fi
+            sleep 10
+          done
+          echo "npm did not serve $V within 300s"; exit 1
+
+      - name: Install mcp-publisher
+        run: |
+          curl -sL "https://github.com/modelcontextprotocol/registry/releases/download/v1.8.1/mcp-publisher_linux_amd64.tar.gz" \
+            | tar xz mcp-publisher
+          ./mcp-publisher --version
+
+      - name: Publish to the Official MCP Registry
+        run: |
+          ./mcp-publisher login github-oidc
+          ./mcp-publisher publish
+
+      - name: Confirm the Registry really serves it
+        # A green publish step is not evidence the Registry serves the version.
+        run: |
+          V=$(node -p "require('./package.json').version")
+          sleep 5
+          curl -sf "https://registry.modelcontextprotocol.io/v0/servers?search=io.github.stillmarcus24/stillos-ratings-mcp" \
+            | tee /tmp/reg.json
+          node -e "
+            const d=JSON.parse(require('fs').readFileSync('/tmp/reg.json','utf8'));
+            const s=(d.servers||[]).find(x=>(x.name||x.server&&x.server.name)==='io.github.stillmarcus24/stillos-ratings-mcp');
+            if(!s) throw new Error('Registry does not serve this server after publish');
+            console.log('Registry serves:', JSON.stringify(s.version||s.server&&s.server.version));
+          "
