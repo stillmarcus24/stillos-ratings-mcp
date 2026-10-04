@@ -1,0 +1,45 @@
+{
+  "name": "stillos-ratings-mcp",
+  "version": "1.0.0",
+  "mcpName": "io.github.stillmarcus24/stillos-ratings-mcp",
+  "description": "Check an MCP server before you install it. Outside-in trust ratings for 7,000+ MCP operators from a public census refreshed every 6 hours \u2014 percentile grade, rank, five scored dimensions, payment-rail position, and any DATED finding that a server's advertised tool set grew while the version string it serves stayed identical (so clients that pinned that version were never asked to re-approve what it now exposes). Nothing is self-reported by the operator. An unrated host is reported as NOT RATED with an explicit warning that unobserved is not attested safe. Free, no key, no signup, and every figure is independently recomputable against a public Ed25519 notary receipt.",
+  "bin": {
+    "stillos-ratings-mcp": "bin.cjs"
+  },
+  "main": "index.cjs",
+  "files": [
+    "index.cjs",
+    "mcp.cjs",
+    "bin.cjs",
+    "server.json",
+    "README.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "test": "node test.cjs"
+  },
+  "keywords": [
+    "mcp",
+    "model-context-protocol",
+    "security",
+    "supply-chain",
+    "trust",
+    "rating",
+    "tool-poisoning",
+    "agent",
+    "agentic-economy",
+    "pre-install-check",
+    "vendor-risk",
+    "x402"
+  ],
+  "author": "Still OS Digital Holdings LLC",
+  "license": "MIT",
+  "homepage": "https://stillosdigitalholdings.com/ratings",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/stillmarcus24/stillos-ratings-mcp.git"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}
