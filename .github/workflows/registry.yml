@@ -24,6 +24,23 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Registry field limits, checked locally
+        # The Registry enforces a 100-char description and rejects the whole
+        # publish with a 422. Finding that out from the server costs a round trip
+        # and leaves a red run; it is a string length and belongs in a local gate.
+        run: |
+          node -e "
+            const d=require('./server.json');
+            const fail=[];
+            if(d.description.length>100) fail.push('description '+d.description.length+' > 100');
+            if(!/^io\.github\.stillmarcus24\//.test(d.name)) fail.push('name outside our OIDC namespace: '+d.name);
+            const p=d.packages[0];
+            if(p.registryType==='mcpb' && !/^[0-9a-f]{64}\$/.test(p.fileSha256||'')) fail.push('mcpb requires a sha256');
+            if(p.registryType==='mcpb' && !/^https:\/\/github\.com\//.test(p.identifier)) fail.push('mcpb identifier must be a github release url');
+            if(fail.length) throw new Error('server.json would be rejected:\n  '+fail.join('\n  '));
+            console.log('server.json passes the Registry field limits');
+          "
+
       - name: The declared sha256 must match the asset actually served
         # Publishing a hash that does not match the live asset would list a
         # server no client can install, and the failure would surface to
