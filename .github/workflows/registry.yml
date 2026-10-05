@@ -1,0 +1,78 @@
+# Publishes to the Official MCP Registry ONLY -- no npm, no stored credential.
+#
+# `mcp-publisher login github-oidc` authenticates as this repository's own OIDC
+# identity, which the Registry trusts for the io.github.stillmarcus24/* namespace.
+# There is no secret in this workflow and nothing to rotate or leak.
+#
+# The package is the MCPB bundle attached to this repo's GitHub release. The
+# Registry fetches it by URL and checks it against the fileSha256 in server.json,
+# so a release asset replaced after publication fails the hash rather than
+# silently serving different code.
+name: registry
+
+on:
+  workflow_dispatch:
+  release:
+    types: [published]
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write        # required for mcp-publisher login github-oidc
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: The declared sha256 must match the asset actually served
+        # Publishing a hash that does not match the live asset would list a
+        # server no client can install, and the failure would surface to
+        # strangers rather than to us. Check it before claiming anything.
+        run: |
+          URL=$(node -p "require('./server.json').packages[0].identifier")
+          WANT=$(node -p "require('./server.json').packages[0].fileSha256")
+          curl -sL -o /tmp/pkg.mcpb "$URL"
+          GOT=$(sha256sum /tmp/pkg.mcpb | cut -d' ' -f1)
+          echo "want=$WANT"
+          echo "got =$GOT"
+          [ "$WANT" = "$GOT" ] || { echo "sha256 MISMATCH — refusing to publish"; exit 1; }
+
+      - name: The bundle must actually speak MCP
+        # A listed server that cannot complete an initialize handshake is worse
+        # than an unlisted one. Unzip the real artifact and talk to it.
+        run: |
+          mkdir -p /tmp/unpacked && cd /tmp/unpacked && unzip -q /tmp/pkg.mcpb
+          node -e "JSON.parse(require('fs').readFileSync('manifest.json','utf8')); console.log('manifest.json valid')"
+          printf '%s\n' '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}' \
+            | timeout 30 node server/bin.cjs mcp \
+            | node -e "
+              let b='';process.stdin.on('data',c=>b+=c).on('end',()=>{
+                const r=JSON.parse(b.split('\n')[0]);
+                if(r.result.serverInfo.name!=='stillos-ratings-mcp') throw new Error('wrong serverInfo');
+                console.log('handshake OK', JSON.stringify(r.result.serverInfo));
+              })"
+
+      - name: Install mcp-publisher
+        run: |
+          curl -sL "https://github.com/modelcontextprotocol/registry/releases/download/v1.8.1/mcp-publisher_linux_amd64.tar.gz" \
+            | tar xz mcp-publisher
+          ./mcp-publisher --version
+
+      - name: Publish to the Official MCP Registry
+        run: |
+          ./mcp-publisher login github-oidc
+          ./mcp-publisher publish
+
+      - name: Confirm the Registry really serves it
+        # A green publish step is not evidence the Registry serves the version.
+        run: |
+          sleep 5
+          curl -sf "https://registry.modelcontextprotocol.io/v0/servers?search=io.github.stillmarcus24/stillos-ratings-mcp" > /tmp/reg.json
+          cat /tmp/reg.json
+          node -e "
+            const d=JSON.parse(require('fs').readFileSync('/tmp/reg.json','utf8'));
+            const list=d.servers||[];
+            const hit=list.map(x=>x.server||x).find(s=>s.name==='io.github.stillmarcus24/stillos-ratings-mcp');
+            if(!hit) throw new Error('Registry does not serve this server after publish');
+            console.log('Registry serves version', hit.version);
+          "

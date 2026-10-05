@@ -1,7 +1,7 @@
 {
   "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
   "name": "io.github.stillmarcus24/stillos-ratings-mcp",
-  "description": "Check an MCP server before you install it: outside-in trust ratings for 7,000+ operators, with dated tool-surface findings.",
+  "description": "Check an MCP server before you install it: outside-in trust ratings for 7,000+ operators, publisher/fleet concentration, and dated tool-surface findings.",
   "version": "1.0.0",
   "repository": {
     "url": "https://github.com/stillmarcus24/stillos-ratings-mcp",
@@ -10,20 +10,12 @@
   "homepage": "https://stillosdigitalholdings.com/ratings",
   "packages": [
     {
-      "registryType": "npm",
-      "identifier": "stillos-ratings-mcp",
-      "version": "1.0.0",
+      "registryType": "mcpb",
+      "identifier": "https://github.com/stillmarcus24/stillos-ratings-mcp/releases/download/v1.0.0/stillos-ratings-mcp.mcpb",
+      "fileSha256": "6f048f6a2db6faa962f78aaa7eb87a6c56ded9d33c0fd97ae7fde5bbd3342c9d",
       "transport": {
         "type": "stdio"
-      },
-      "runtimeHint": "npx",
-      "runtimeArguments": [
-        {
-          "type": "positional",
-          "value": "mcp",
-          "description": "run as MCP stdio server"
-        }
-      ]
+      }
     }
   ]
 }
